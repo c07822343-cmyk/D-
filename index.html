@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<!-- ============================================================
+     IP LINK SCANNER & FILTER TESTER
+     Single-file client-side app — no build step, no backend.
+     Sections:
+       HEAD ......... meta + inline CSS (themes, layout, components)
+       BODY ......... sticky header, cards, results, reference panels
+       SCRIPT ....... state, validation, URL generator, test engine,
+                      concurrency pool, table, exports, history
+     NOTE: Browser same-origin policy limits cross-origin content
+     inspection. The engine uses readable-content signature scans
+     when possible and multi-probe load heuristics otherwise, and
+     labels every verdict as "verified" or "inferred".
+     Use only on networks/hosts you are authorized to test.
+     ============================================================ -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>IP Link Scanner &amp; Filter Tester</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path d='M24 3 42 10v12c0 11-7.5 19.5-18 23C13.5 41.5 6 33 6 22V10L24 3z' fill='%233560e0'/><circle cx='24' cy='22' r='9' fill='none' stroke='%23fff' stroke-width='3'/><circle cx='24' cy='22' r='3' fill='%23fff'/></svg>">
+<style>
+/* ============================================================
+   1. DESIGN TOKENS / THEMES
+   ============================================================ */
+:root{
+  --bg1:#0b1020; --bg2:#131a33; --bg3:#0d1530;
+  --card:rgba(255,255,255,.055);
+  --card-strong:rgba(255,255,255,.09);
+  --border:rgba(255,255,255,.12);
+  --text:#e9edf6; --muted:#97a2ba;
+  --accent:#5b8cff; --accent2:#22d3ee;
+  --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; --info:#38bdf8;
+  --shadow:0 12px 40px rgba(0,0,0,.45);
+  --radius:18px;
+}
+[data-theme="light"]{
+  --bg1:#e8eefb; --bg2:#f5f8ff; --bg3:#dde6f7;
+  --card:rgba(255,255,255,.72);
+  --card-strong:rgba(255,255,255,.95);
+  --border:rgba(20,40,90,.14);
+  --text:#16203a; --muted:#5a6685;
+  --accent:#3560e0; --accent2:#0891b2;
+  --shadow:0 12px 32px rgba(40,70,140,.14);
+}
+/* ============================================================
+   2. RESET / BASE
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color:var(--text); min-height:100vh; line-height:1.5;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(91,140,255,.20), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(34,211,238,.14), transparent 55%),
+    linear-gradient(160deg,var(--bg1),var(--bg2) 45%,var(--bg3));
+  background-attachment:fixed;
+}
+::selection{background:rgba(91,140,255,.35)}
+h1{font-size:1.25rem;letter-spacing:.02em}
+h2{font-size:1.05rem;display:flex;align-items:center;gap:.55rem}
+h2 .k{font-size:1.25rem}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--accent)}
+/* ============================================================
+   3. STICKY HEADER / NAV
+   ============================================================ */
+header{
+  position:sticky;top:0;z-index:50;
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  background:color-mix(in srgb,var(--bg2) 72%,transparent);
+  border-bottom:1px solid var(--border);
+}
+.nav{max-width:1200px;margin:0 auto;padding:.7rem 1.1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:.65rem;font-weight:700}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase}
+.shield{width:38px;height:38px;flex:0 0 auto;filter:drop-shadow(0 2px 8px rgba(91,140,255,.45))}
+nav.links{display:flex;gap:.25rem;flex-wrap:wrap;margin-left:auto}
+nav.links a{
+  color:var(--muted);text-decoration:none;font-size:.85rem;font-weight:600;
+  padding:.4rem .7rem;border-radius:10px;transition:all .18s ease;
+}
+nav.links a:hover{color:var(--text);background:var(--card-strong)}
+/* ============================================================
+   4. LAYOUT / CARDS
+   ============================================================ */
+main{max-width:1200px;margin:0 auto;padding:1.4rem 1.1rem 4rem;display:grid;gap:1.2rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:1.15rem 1.25rem;box-shadow:var(--shadow);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  animation:rise .5s ease both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.card .sub{color:var(--muted);font-size:.83rem;margin-top:.15rem}
+.row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+.spacer{flex:1}
+/* ============================================================
+   5. FORM CONTROLS / BUTTONS
+   ============================================================ */
+label.lbl{font-size:.8rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:.35rem}
+input[type=text],input[type=url],select{
+  width:100%;padding:.7rem .85rem;border-radius:12px;font-size:.95rem;color:var(--text);
+  background:var(--card-strong);border:2px solid var(--border);outline:none;transition:border-color .15s ease, box-shadow .15s ease;
+}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+input.valid{border-color:var(--ok)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
+input.invalid{border-color:var(--bad)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 20%,transparent)}
+.hint{font-size:.78rem;min-height:1.1em;margin-top:.3rem}
+.hint.ok{color:var(--ok)} .hint.err{color:var(--bad)}
+.btn{
+  appearance:none;border:none;cursor:pointer;font-weight:700;font-size:.9rem;color:#fff;
+  padding:.68rem 1.15rem;border-radius:12px;
+  background:linear-gradient(135deg,var(--accent),#7c5cff);
+  box-shadow:0 6px 18px rgba(91,140,255,.35);transition:transform .12s ease, filter .15s ease, opacity .15s;
+}
+.btn:hover{filter:brightness(1.08)} .btn:active{transform:translateY(1px) scale(.99)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:var(--card-strong);color:var(--text);border:1px solid var(--border);box-shadow:none}
+.btn.small{padding:.4rem .7rem;font-size:.78rem;border-radius:9px}
+.btn.danger{background:linear-gradient(135deg,#e04545,#b91c1c);box-shadow:0 6px 16px rgba(239,68,68,.3)}
+/* range sliders */
+input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
+/* checkbox pills */
+.toggles{display:flex;flex-wrap:wrap;gap:.45rem}
+.tgl{position:relative}
+.tgl input{position:absolute;opacity:0;pointer-events:none}
+.tgl span{
+  display:inline-block;padding:.38rem .8rem;border-radius:999px;font-size:.8rem;font-weight:600;
+  border:1px solid var(--border);color:var(--muted);background:var(--card-strong);cursor:pointer;
+  transition:all .15s ease;user-select:none;
+}
+.tgl input:checked+span{color:#fff;border-color:transparent;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.tgl input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+/* ============================================================
+   6. SCANNER ANIMATION / PROGRESS
+   ============================================================ */
+.radar{width:64px;height:64px;border-radius:50%;position:relative;flex:0 0 auto;
+  border:2px solid color-mix(in srgb,var(--accent) 60%,transparent);overflow:hidden;display:none}
+.radar::before{content:"";position:absolute;inset:0;
+  background:conic-gradient(from 0deg,color-mix(in srgb,var(--accent) 75%,transparent),transparent 22%);
+  animation:sweep 1.5s linear infinite}
+.radar::after{content:"";position:absolute;inset:26%;border-radius:50%;
+  background:radial-gradient(circle,var(--accent2),transparent 70%);animation:pulse 1.2s ease-in-out infinite}
+.scanning .radar{display:block}
+@keyframes sweep{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(.6);opacity:.6}50%{transform:scale(1);opacity:1}}
+.progress{height:12px;border-radius:999px;background:var(--card-strong);border:1px solid var(--border);overflow:hidden}
+.progress>i{display:block;height:100%;width:0%;border-radius:999px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  transition:width .25s ease;position:relative}
+.progress>i::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
+  animation:shim 1.4s linear infinite}
+@keyframes shim{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.7rem;margin-top:.9rem}
+.stat{background:var(--card-strong);border:1px solid var(--border);border-radius:14px;padding:.7rem .85rem}
+.stat b{font-size:1.35rem;display:block;line-height:1.15}
+.stat span{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.stat.c-ok b{color:var(--ok)} .stat.c-bad b{color:var(--bad)} .stat.c-warn b{color:var(--warn)} .stat.c-info b{color:var(--info)}
+/* ============================================================
+   7. URL QUEUE CHIPS
+   ============================================================ */
+.chiplist{max-height:230px;overflow:auto;display:flex;flex-wrap:wrap;gap:.4rem;padding:.6rem;
+  background:var(--card-strong);border:1px solid var(--border);border-radius:12px}
+.chip{font-size:.72rem;padding:.28rem .55rem;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip b{color:var(--accent);font-weight:600}
+.chip button{border:none;background:none;color:var(--bad);cursor:pointer;font-weight:800;margin-left:.3rem}
+.count-badge{font-size:.8rem;font-weight:800;color:#fff;padding:.15rem .6rem;border-radius:999px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2))}
+/* ============================================================
+   8. RESULTS TABLE
+   ============================================================ */
+.tablewrap{overflow:auto;border:1px solid var(--border);border-radius:14px;max-height:520px}
+table{width:100%;border-collapse:collapse;font-size:.82rem;min-width:760px}
+thead th{position:sticky;top:0;z-index:2;text-align:left;padding:.6rem .7rem;font-size:.7rem;
+  text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+  background:color-mix(in srgb,var(--bg2) 92%,transparent);border-bottom:1px solid var(--border)}
+tbody td{padding:.5rem .7rem;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);vertical-align:top}
+tbody tr{transition:background .15s ease}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+tr.r-ok{background:color-mix(in srgb,var(--ok) 7%,transparent)}
+tr.r-bad{background:color-mix(in srgb,var(--bad) 8%,transparent)}
+tr.r-err{background:color-mix(in srgb,var(--warn) 6%,transparent)}
+td.u{font-size:.76rem;word-break:break-all;min-width:220px}
+td .fam{display:block;color:var(--muted);font-size:.66rem}
+.pill{display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem;font-weight:800;
+  padding:.2rem .55rem;border-radius:999px;white-space:nowrap}
+.pill.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.bad{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+.pill.err{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.pill.test{background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info)}
+.pill.test::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--info);animation:pulse 1s ease-in-out infinite}
+/* filter chips */
+.filters{display:flex;gap:.4rem;flex-wrap:wrap}
+.fbtn{border:1px solid var(--border);background:var(--card-strong);color:var(--muted);cursor:pointer;
+  font-size:.76rem;font-weight:700;padding:.32rem .7rem;border-radius:999px;transition:all .15s}
+.fbtn.active{color:#fff;border-color:transparent;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+/* expandable per-probe evidence row + response-time histogram */
+tbody tr{cursor:pointer}
+tr.detailrow td{background:color-mix(in srgb,var(--accent) 6%,transparent);cursor:default}
+.evtbl{width:100%;border-collapse:collapse;font-size:.74rem;min-width:0;margin:.4rem 0 .2rem}
+.evtbl th{text-align:left;color:var(--muted);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;
+  padding:.25rem .5rem;border-bottom:1px solid var(--border)}
+.evtbl td{padding:.28rem .5rem;border-bottom:1px dashed color-mix(in srgb,var(--border) 60%,transparent)}
+.histo{display:flex;align-items:flex-end;gap:5px;height:46px;margin-top:.35rem}
+.histo>div{flex:1;min-height:3px;border-radius:4px 4px 0 0;opacity:.9;
+  background:linear-gradient(180deg,var(--accent2),var(--accent));transition:height .3s ease}
+.histo>div.empty{background:var(--border);opacity:.35}
+/* ============================================================
+   9. REFERENCE PANEL / MISC
+   ============================================================ */
+.ref{display:grid;gap:.45rem;margin-top:.6rem}
+.refitem{display:flex;align-items:center;gap:.6rem;background:var(--card-strong);
+  border:1px solid var(--border);border-radius:10px;padding:.5rem .7rem;font-size:.78rem}
+.refitem code{flex:1;word-break:break-all;color:var(--accent2)}
+.refitem .why{color:var(--muted);font-size:.7rem}
+details{margin-top:.6rem}
+summary{cursor:pointer;font-weight:700;font-size:.85rem;color:var(--accent)}
+/* Netlify deploy guide */
+.guide h3{font-size:.95rem;margin:1.1rem 0 .45rem;color:var(--accent2)}
+.guide ol,.guide ul{margin-left:1.2rem;display:grid;gap:.34rem;font-size:.84rem}
+.guide ol li::marker{color:var(--accent);font-weight:800}
+.guide mark{background:color-mix(in srgb,var(--warn) 24%,transparent);color:inherit;border-radius:5px;padding:0 .25rem}
+.guide code{background:var(--card-strong);border:1px solid var(--border);border-radius:6px;padding:.06rem .38rem;font-size:.75rem;word-break:break-all}
+.note{font-size:.78rem;color:var(--muted);margin-top:.6rem}
+.note b{color:var(--warn)}
+/* history */
+.hitem{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:var(--card-strong);
+  border:1px solid var(--border);border-radius:12px;padding:.55rem .8rem;font-size:.8rem}
+.hitem .dot{width:9px;height:9px;border-radius:50%;background:var(--accent2)}
+.hitem time{color:var(--muted);font-size:.72rem}
+/* toasts */
+#toasts{position:fixed;right:1rem;bottom:1rem;z-index:100;display:grid;gap:.5rem;max-width:min(92vw,360px)}
+.toast{padding:.75rem 1rem;border-radius:12px;font-size:.84rem;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,#33415e,#1f2a44);border:1px solid var(--border);
+  box-shadow:var(--shadow);animation:tin .25s ease both;display:flex;gap:.5rem;align-items:center}
+.toast.ok{background:linear-gradient(135deg,#15803d,#166534)}
+.toast.bad{background:linear-gradient(135deg,#b91c1c,#7f1d1d)}
+.toast.info{background:linear-gradient(135deg,var(--accent),#4338ca)}
+@keyframes tin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.toast.out{animation:tout .3s ease both}
+@keyframes tout{to{opacity:0;transform:translateY(10px)}}
+footer{max-width:1200px;margin:0 auto;padding:0 1.1rem 2.5rem;color:var(--muted);font-size:.75rem;text-align:center}
+@media(max-width:640px){
+  h1{font-size:1.05rem}
+  .btn{padding:.6rem .9rem}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<!-- ============================================================
+     STICKY HEADER
+     ============================================================ -->
+<header>
+  <div class="nav">
+    <div class="brand">
+      <!-- CSS/inline-SVG shield + radar icon -->
+      <svg class="shield" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M24 3 42 10v12c0 11-7.5 19.5-18 23C13.5 41.5 6 33 6 22V10L24 3z"
+              fill="url(#g1)" stroke="#8fb0ff" stroke-width="1.5"/>
+        <circle cx="24" cy="22" r="9" stroke="#fff" stroke-width="1.5" opacity=".85"/>
+        <path d="M24 22 31 15" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="24" cy="22" r="2.4" fill="#fff"/>
+        <defs><linearGradient id="g1" x1="6" y1="3" x2="42" y2="44">
+          <stop stop-color="#3560e0"/><stop offset="1" stop-color="#0891b2"/>
+        </linearGradient></defs>
+      </svg>
+      <div><h1>IP Link Scanner &amp; Filter Tester</h1><small>URL discovery · reachability audit</small></div>
+    </div>
+    <nav class="links">
+      <a href="#scanner">Scanner</a><a href="#queue">URL Queue</a><a href="#results">Results</a>
+      <a href="#history">History</a><a href="#reference">Bypass Reference</a><a href="#about">About</a><a href="#deploy"><b>Deploy FREE 🚀</b></a>
+    </nav>
+    <button class="btn ghost small" id="themeBtn" title="Toggle dark/light mode">🌙 Dark</button>
+  </div>
+</header>
+
+<main id="app">
+  <!-- ============================================================
+       CARD: TARGET INPUT + VALIDATION
+       ============================================================ -->
+  <section class="card" id="scanner">
+    <h2><span class="k">🎯</span> Target</h2>
+    <p class="sub">Enter an IPv4 address (optionally with a port), then generate URL variations and scan them.</p>
+    <div class="row" style="margin-top:.8rem;align-items:flex-start">
+      <div style="flex:1;min-width:240px">
+        <label class="lbl" for="ipInput">IPv4 address [:port]</label>
+        <input type="text" id="ipInput" class="mono" placeholder="149.248.15.231  or  149.248.15.231:8080"
+               autocomplete="off" spellcheck="false" inputmode="decimal">
+        <div class="hint" id="ipHint"></div>
+      </div>
+      <div style="display:flex;gap:.55rem;align-items:flex-end;padding-bottom:1.35rem">
+        <button class="btn ghost" id="genBtn">⚙️ Generate URLs</button>
+        <button class="btn" id="scanBtn">▶ Scan</button>
+      </div>
+    </div>
+    <!-- URL family toggles -->
+    <div style="margin-top:1rem">
+      <label class="lbl">Include URL families</label>
+      <div class="toggles" id="familyToggles">
+        <label class="tgl"><input type="checkbox" data-fam="ports" checked><span>Common ports</span></label>
+        <label class="tgl"><input type="checkbox" data-fam="paths" checked><span>Paths</span></label>
+        <label class="tgl"><input type="checkbox" data-fam="enc" checked><span>Encoding tricks</span></label>
+        <label class="tgl"><input type="checkbox" data-fam="dns" checked><span>Wildcard DNS</span></label>
+        <label class="tgl"><input type="checkbox" data-fam="ipv6" checked><span>IPv6-mapped</span></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CARD: SCAN SETTINGS
+       ============================================================ -->
+  <section class="card" id="settingsCard">
+    <h2><span class="k">🛠️</span> Scan Settings</h2>
+    <div class="grid2" style="margin-top:.9rem;gap:1.2rem">
+      <div>
+        <label class="lbl" for="concRange">Parallel batch size — <span id="concVal">5</span> concurrent</label>
+        <input type="range" id="concRange" min="1" max="20" step="1" value="5">
+      </div>
+      <div>
+        <label class="lbl" for="toRange">Per-URL timeout — <span id="toVal">5</span>s</label>
+        <input type="range" id="toRange" min="1" max="15" step="1" value="5">
+      </div>
+    </div>
+    <div style="margin-top:1rem">
+      <label class="lbl">Probe methods (tried in priority order until a verdict)</label>
+      <div class="toggles" id="methodToggles">
+        <label class="tgl"><input type="checkbox" data-m="fetch" checked><span>fetch()</span></label>
+        <label class="tgl"><input type="checkbox" data-m="iframe" checked><span>&lt;iframe&gt;</span></label>
+        <label class="tgl"><input type="checkbox" data-m="img" checked><span>&lt;img&gt; (favicon)</span></label>
+        <label class="tgl"><input type="checkbox" data-m="script"><span>&lt;script&gt;</span></label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:1rem">
+      <div style="flex:1;min-width:260px">
+        <label class="lbl" for="dohSel">DNS-over-HTTPS pre-check (resolver)</label>
+        <select id="dohSel">
+          <option value="google">On — Google (dns.google)</option>
+          <option value="cf">On — Cloudflare (cloudflare-dns.com)</option>
+          <option value="off">Off — skip DNS checks</option>
+        </select>
+        <div class="hint">Verifies wildcard-DNS names really resolve to the target &amp; fails fast on NXDOMAIN.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CARD: URL QUEUE (live count, custom URLs)
+       ============================================================ -->
+  <section class="card" id="queue">
+    <h2><span class="k">🧭</span> URL Queue <span class="count-badge" id="urlCount">0</span></h2>
+    <p class="sub">Generated variations plus any custom URLs you add. Click ✕ to remove one.</p>
+    <div class="row" style="margin-top:.7rem">
+      <input type="url" id="customUrl" class="mono" placeholder="Add custom URL, e.g. http://149.248.15.231/api" style="flex:1;min-width:220px">
+      <button class="btn ghost small" id="addUrlBtn">＋ Add</button>
+      <button class="btn ghost small" id="clearQueueBtn">🗑 Clear</button>
+    </div>
+    <div class="chiplist mono" id="chipList" style="margin-top:.7rem"></div>
+  </section>
+
+  <!-- ============================================================
+       CARD: LIVE PROGRESS + SUMMARY STATS
+       ============================================================ -->
+  <section class="card" id="progressCard">
+    <div class="row">
+      <div class="radar" aria-hidden="true"></div>
+      <div>
+        <h2><span class="k">📡</span> Scan Progress</h2>
+        <p class="sub" id="progressText">Idle — generate URLs and press Scan.</p>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn danger small" id="cancelBtn" disabled>■ Cancel</button>
+    </div>
+    <div style="margin-top:.8rem" class="progress" role="progressbar" aria-label="Scan progress"><i id="progBar"></i></div>
+    <div class="stats">
+      <div class="stat c-info"><b id="stTotal">0</b><span>Tested</span></div>
+      <div class="stat c-ok"><b id="stOk">0</b><span>✅ Accessible</span></div>
+      <div class="stat c-bad"><b id="stBad">0</b><span>🚫 Blocked</span></div>
+      <div class="stat c-warn"><b id="stErr">0</b><span>⚠️ Errors</span></div>
+      <div class="stat"><b id="stRate">—</b><span>Success rate</span></div>
+      <div class="stat"><b id="stEta">—</b><span>ETA</span></div>
+    </div>
+    <div style="margin-top:1rem">
+      <label class="lbl">Response-time distribution</label>
+      <div class="histo" id="histogram" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CARD: RESULTS DASHBOARD
+       ============================================================ -->
+  <section class="card" id="results">
+    <h2><span class="k">📊</span> Results</h2>
+    <div class="row" style="margin-top:.7rem">
+      <div class="filters" id="filters">
+        <button class="fbtn active" data-f="all">All</button>
+        <button class="fbtn" data-f="accessible">✅ Accessible</button>
+        <button class="fbtn" data-f="blocked">🚫 Blocked</button>
+        <button class="fbtn" data-f="error">⚠️ Errors</button>
+        <button class="fbtn" data-f="testing">🔄 Testing</button>
+      </div>
+      <div class="spacer"></div>
+      <input type="text" id="searchBox" placeholder="🔎 Filter by URL / detail text…" style="max-width:230px">
+      <select id="sortSel" title="Sort results" style="max-width:210px">
+        <option value="order">Sort: queue order</option>
+        <option value="status">Sort: status</option>
+        <option value="fast">Sort: fastest first</option>
+        <option value="slow">Sort: slowest first</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn ghost small" id="csvBtn">⬇ Export CSV</button>
+      <button class="btn ghost small" id="jsonBtn">⬇ Export JSON</button>
+      <button class="btn ghost small" id="copyOkBtn">📋 Copy Accessible URLs</button>
+      <button class="btn ghost small" id="retestBtn" title="Re-scan only the URLs that errored">🔁 Retest Errors</button>
+    </div>
+    <div class="tablewrap" style="margin-top:.7rem">
+      <table>
+        <thead><tr>
+          <th style="width:44px">#</th><th>URL</th><th style="width:150px">Method Used</th>
+          <th style="width:130px">Status</th><th style="width:80px">Time (ms)</th><th>Details</th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.4rem">
+          No results yet — run a scan.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CARD: SCAN HISTORY (localStorage)
+       ============================================================ -->
+  <section class="card" id="history">
+    <h2><span class="k">🕘</span> Scan History</h2>
+    <p class="sub">Stored locally in your browser (last 10 scans). Load a scan to review its results.</p>
+    <div id="historyList" style="display:grid;gap:.5rem;margin-top:.7rem"></div>
+  </section>
+
+  <!-- ============================================================
+       CARD: QUICK BYPASS TECHNIQUES REFERENCE (educational)
+       ============================================================ -->
+  <section class="card" id="reference">
+    <h2><span class="k">📚</span> Quick Bypass Techniques — Reference</h2>
+    <p class="sub">Common alternate URL notations that filters must normalize (educational reference; for <code>149.248.15.231</code>).</p>
+    <div class="ref mono" id="refList"></div>
+    <p class="note"><b>Note:</b> these notations are RFC-standard ways browsers resolve hosts; modern filters (and browsers)
+      normalize most of them. This panel exists so admins can verify that their own filter covers every form.</p>
+  </section>
+
+  <!-- ============================================================
+       CARD: ABOUT / HONEST LIMITATIONS
+       ============================================================ -->
+  <section class="card" id="about">
+    <h2><span class="k">ℹ️</span> How detection works &amp; limitations</h2>
+    <details open>
+      <summary>What the browser can and can't tell us</summary>
+      <p class="note" style="margin-top:.4rem">
+        1️⃣ First the engine tries a readable <code>fetch</code>. If the server allows it, the HTML is scanned for
+        filter signatures (<code>Lightspeed</code>, <code>relay.school</code>, <code>lsfilter</code>, <code>ls-block</code>,
+        <code>"blocked"/"restricted"</code> notices, etc.) → verdict is <b>verified ✅/🚫</b>.<br>
+        2️⃣ Cross-origin pages usually can't be read (same-origin policy), so it falls back to opaque
+        <code>fetch</code>, hidden <code>&lt;iframe&gt;</code>, <code>&lt;img&gt;</code> favicon and <code>&lt;script&gt;</code>
+        probes, using load/error/timing signals. Those verdicts are labeled <b>inferred</b> in Details.<br>
+        3️⃣ If this page is served over <b>HTTPS</b> (e.g. Netlify), browsers block <b>http://</b> targets as
+        mixed content — those show ⚠️ with a hint. For full coverage, run the file over plain HTTP
+        (e.g. <code>python -m http.server</code>) or allow insecure content for the site.<br>
+        4️⃣ A "Blocked (suspected)" can also mean the site just forbids framing (X-Frame-Options) — treat
+        inferred verdicts as leads, not proof.<br>
+        5️⃣ The <b>DNS-over-HTTPS pre-check</b> (Google/Cloudflare — configurable in Scan Settings) verifies that
+        wildcard-DNS names like <code>1.2.3.4.nip.io</code> actually resolve to your target IP and fails fast on
+        NXDOMAIN instead of burning probe timeouts.<br>
+        6️⃣ <b>Click any results row</b> to open its per-probe evidence log — every probe tried, its result,
+        timing, and whether the final verdict was verified or inferred. Export CSV includes this probe log.
+      </p>
+    </details>
+    <p class="note"><b>Responsible use:</b> run this only against hosts/networks you own or are authorized to test.
+      Circumventing an organization's filtering policy may violate acceptable-use rules.</p>
+  </section>
+
+  <!-- ============================================================
+       CARD: NETLIFY FREE HOSTING GUIDE (mandatory — ships with file)
+       ============================================================ -->
+  <section class="card guide" id="deploy">
+    <h2><span class="k">🚀</span> Host This App FREE on Netlify — Complete Guide</h2>
+    <p class="sub">This single <code>index.html</code> is all you need — no backend, no build step, $0 on Netlify's free Starter plan.</p>
+
+    <h3>⚡ Method 1: Netlify Drop (fastest — live in ~30 seconds, account only needed to keep it)</h3>
+    <ol>
+      <li>Make sure this file is saved on your computer named exactly <code>index.html</code> (lowercase — Netlify serves it as the homepage automatically).</li>
+      <li>Open <a href="https://app.netlify.com/drop" target="_blank" rel="noopener">app.netlify.com/drop</a> in your browser.</li>
+      <li>Drag the <code>index.html</code> file itself — or its containing folder, or a <code>.zip</code> of it — onto the dashed drop zone.</li>
+      <li>Wait a few seconds. Netlify uploads and publishes instantly, then shows a live public URL like <code>https://sparkly-otter-1a2b3c.netlify.app</code>.</li>
+      <li>Open the link — the app is live and shareable with anyone.</li>
+      <li><mark>Claim it or lose it:</mark> anonymous Drop sites are <b>temporary</b> (unclaimed sites are deleted, typically within about an hour). Click <b>“Claim this site”</b> on the result page and create a <b>free</b> Netlify account (email or GitHub login — no credit card) to keep the site permanently in your dashboard.</li>
+      <li><b>To update later:</b> Netlify dashboard → open the site → <b>Deploys</b> tab → drag the updated file onto the deploy area.</li>
+    </ol>
+
+    <h3>🔄 Method 2: Git-Based Deploy (best for updates — auto-redeploys on every push)</h3>
+    <ol>
+      <li>Create a free Netlify account at <code>app.netlify.com/signup</code> — choose <b>“Sign up with GitHub”</b> for one-click linking.</li>
+      <li>From the dashboard, click <b>Add new site → Import an existing project</b>.</li>
+      <li>Select <b>GitHub</b> as the provider and authorize Netlify when prompted.</li>
+      <li>Pick the repository containing this <code>index.html</code> and the branch it lives on.</li>
+      <li>Deploy settings: <b>Build command = leave empty</b> (pure static file, no build). <b>Publish directory = <code>/</code></b> (root, where <code>index.html</code> sits). No <code>netlify.toml</code> needed.</li>
+      <li>Click <b>Deploy site</b> — live in seconds on a <code>*.netlify.app</code> URL.</li>
+      <li>From now on, every <code>git push</code> to the watched branch redeploys automatically — no manual uploads.</li>
+      <li><i>Optional:</i> rename the URL via <b>Site configuration → Site details → Change site name</b> (e.g. <code>ip-link-scanner.netlify.app</code>).</li>
+    </ol>
+
+    <h3>🖥️ Method 3: Netlify CLI (for terminal users)</h3>
+    <ol>
+      <li><code>npm install -g netlify-cli</code>, then <code>netlify login</code> (browser opens to authorize your free account).</li>
+      <li>In the project folder: <code>netlify deploy --dir=.</code> → get a <b>preview/draft URL</b> to check the site.</li>
+      <li>When happy: <code>netlify deploy --prod --dir=.</code> → publishes to your <b>live production URL</b>.</li>
+    </ol>
+
+    <h3>💡 Tips specific to this app</h3>
+    <ul>
+      <li><b>HTTPS vs. http:// targets:</b> Netlify serves your site over HTTPS, so browsers will block this scanner's <code>http://</code> probes as <i>mixed content</i> (the app flags this in the Details column). For unrestricted testing, run the same file locally with <code>python -m http.server 8000</code> and open <code>http://localhost:8000</code>; use the Netlify copy for sharing and demos.</li>
+      <li><b>Free tier includes:</b> 100&nbsp;GB bandwidth/month, free automatic HTTPS, and custom domain support (Domain management → Add a domain — free SSL included).</li>
+      <li><b>Single file = zero config:</b> no functions, redirects, or build steps to set up — deploy and it just works.</li>
+    </ul>
+  </section>
+</main>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+<footer>IP Link Scanner &amp; Filter Tester · single-file, 100% client-side · your data never leaves this browser</footer>
+
+<script>
+"use strict";
+/* ============================================================
+   SECTION A — UTILITIES (DOM helpers, toasts, clipboard, misc)
+   ============================================================ */
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg, type='info', ms=3400){
+  const box = $('#toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = (type==='ok'?'✅ ':type==='bad'?'⚠️ ':'ℹ️ ') + msg;
+  box.appendChild(t);
+  setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(), 320); }, ms);
+  while (box.children.length > 4) box.firstChild.remove(); // cap visible toasts
+}
+
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch { // fallback for non-secure contexts
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok = document.execCommand('copy'); }catch{}
+    ta.remove(); return ok;
+  }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmtMs = ms => Math.round(ms).toLocaleString();
+const cacheBust = u => u + (u.includes('?')?'&':'?') + '_cb=' + Date.now() + Math.random().toString(16).slice(2,6);
+const originOf = u => { try { return new URL(u).origin; } catch { return null; } };
+const hostOf = u => { try { return new URL(u).hostname.replace(/^\[|\]$/g, ''); } catch { return null; } };
+// dotted IPs, DWORDs, hex/octal notations — pointless to DNS-resolve these
+const looksNumericHost = h => /^(\d[\d.]*|0x[0-9a-f.]+|0[0-7.]*)$/i.test(h);
+
+/* ============================================================
+   SECTION B — STATE + SETTINGS PERSISTENCE
+   ============================================================ */
+const LS_SET = 'ipls.settings.v1';
+const LS_HIS = 'ipls.history.v1';
+
+const state = {
+  ip: null, port: null,          // parsed target
+  queue: [],                     // [{url, family}] pending/current test list
+  results: [],                   // [{i,url,family,method,status,ms,detail,verified}]
+  counters: {accessible:0, blocked:0, error:0, tested:0},
+  scanning: false,
+  filter: 'all',
+  sort: 'order',
+  search: '',
+  rowRefs: new Map(),            // index -> <tr> for O(1) updates
+};
+
+const settings = {
+  theme: 'dark', concurrency: 5, timeoutSec: 5,
+  doh: 'google',                 // 'google' | 'cf' | 'off'
+  families: {ports:true, paths:true, enc:true, dns:true, ipv6:true},
+  methods: {fetch:true, iframe:true, img:true, script:false},
+};
+
+function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(settings)); }catch{} }
+function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_SET) || 'null');
+    if(!s) return;
+    Object.assign(settings, s);
+    settings.families = Object.assign({ports:true,paths:true,enc:true,dns:true,ipv6:true}, s.families);
+    settings.methods  = Object.assign({fetch:true,iframe:true,img:true,script:false}, s.methods);
+  }catch{}
+}
+
+/* ============================================================
+   SECTION C — THEME TOGGLE
+   ============================================================ */
+function applyTheme(){
+  document.documentElement.dataset.theme = settings.theme;
+  $('#themeBtn').textContent = settings.theme === 'dark' ? '🌙 Dark' : '☀️ Light';
+}
+$('#themeBtn').addEventListener('click', () => {
+  settings.theme = settings.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(); saveSettings();
+});
+
+/* ============================================================
+   SECTION D — IP PARSING + REAL-TIME VALIDATION
+   ============================================================ */
+function parseTarget(raw){
+  // Accepts: "1.2.3.4", "1.2.3.4:8080", or a full URL containing them
+  let s = raw.trim();
+  if (!s) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {           // looks like a URL → extract host:port
+    try { const u = new URL(s); s = u.host; } catch { /* fall through */ }
+  }
+  const m = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?$/);
+  if (!m) return null;
+  const oct = m.slice(1,5).map(Number);
+  if (oct.some(o => o > 255)) return null;
+  const port = m[5] !== undefined ? Number(m[5]) : null;
+  if (port !== null && (port < 1 || port > 65535)) return null;
+  return { ip: oct.join('.'), oct, port };
+}
+
+const ipInput = $('#ipInput'), ipHint = $('#ipHint');
+function validateIPRealtime(){
+  const v = ipInput.value;
+  ipInput.classList.remove('valid','invalid');
+  ipHint.className = 'hint'; ipHint.textContent = '';
+  if (!v.trim()) { state.ip = null; state.port = null; return; }
+  const p = parseTarget(v);
+  if (p) {
+    ipInput.classList.add('valid');
+    ipHint.classList.add('ok');
+    ipHint.textContent = `✓ Valid IPv4${p.port ? ' · port ' + p.port : ''}`;
+    state.ip = p.ip; state.port = p.port;
+  } else {
+    ipInput.classList.add('invalid');
+    ipHint.classList.add('err');
+    ipHint.textContent = '✕ Invalid — expected a.b.c.d (0-255 each) with optional :port';
+    state.ip = null; state.port = null;
+  }
+}
+ipInput.addEventListener('input', validateIPRealtime);
+
+/* ============================================================
+   SECTION E — URL GENERATION / DISCOVERY ENGINE
+   ============================================================ */
+const COMMON_PORTS = [80, 443, 8080, 8443, 8888, 3000, 5000, 4443, 9443];
+const COMMON_PATHS = ['/', '/index.html', '/home', '/login', '/admin', '/dashboard', '/portal'];
+
+function generateURLs(ip, oct, port, fam){
+  const out = new Map();                                 // url -> family (dedupe)
+  const add = (url, family) => { if (!out.has(url)) out.set(url, family); };
+  const p = port ? `:${port}` : '';
+  const [a,b,c,d] = oct;
+
+  // -- 1. Direct IP access ------------------------------------
+  add(`http://${ip}${p}/`,  'direct');
+  add(`https://${ip}${p}/`, 'direct');
+
+  // -- 2. Common ports (both schemes) -------------------------
+  if (fam.ports) for (const pp of COMMON_PORTS) {
+    add(`http://${ip}:${pp}/`,  'port');
+    add(`https://${ip}:${pp}/`, 'port');
+  }
+
+  // -- 3. Path suffixes on the direct scheme URLs -------------
+  if (fam.paths) for (const path of COMMON_PATHS) {
+    add(`http://${ip}${p}${path}`,  'path');
+    add(`https://${ip}${p}${path}`, 'path');
+  }
+
+  // -- 4. Encoding / notation tricks --------------------------
+  if (fam.enc) {
+    const dword = a*0x1000000 + b*0x10000 + c*0x100 + d;                 // 32-bit int
+    const hexD  = '0x' + dword.toString(16).toUpperCase().padStart(8,'0');
+    const octD  = '0' + dword.toString(8);
+    const hexO  = oct.map(o => '0x' + o.toString(16).padStart(2,'0')).join('.');
+    const octO  = oct.map(o => '0' + o.toString(8).padStart(3,'0')).join('.');
+    add(`http://${dword}${p}/`,   'enc-dword');     // http://2516062183/
+    add(`https://${dword}${p}/`,  'enc-dword');
+    add(`http://${hexD}${p}/`,    'enc-hex');       // http://0x95F80FE7/
+    add(`http://${octD}${p}/`,    'enc-octal');     // http://022604077647/
+    add(`http://${hexO}${p}/`,    'enc-hex');       // hex octets
+    add(`http://${octO}${p}/`,    'enc-octal');     // octal octets
+    add(`http://${'0x'+a.toString(16)}.${b}.${c}.${d}${p}/`, 'enc-mixed'); // mixed radix
+    add(`http://${a}.0x${b.toString(16)}.${c}.${d}${p}/`,    'enc-mixed');
+    add(`http://${ip.replace(/\./g,'%2E')}${p}/`,   'enc-pct'); // URL-encoded dots
+    add(`http://${ip}.${p}/`,                       'enc-trail'); // FQDN root dot (dot belongs to host, before :port)
+    add(`http://www.example.com@${ip}${p}/`,        'enc-userinfo'); // trusted-name@ trick (real host after @)
+    add(`https://www.example.com@${ip}${p}/`,       'enc-userinfo');
+    // (double-encoded %252E dots are listed in the reference panel but NOT queued —
+    //  WHATWG URL parsers reject them outright, so they can never navigate)
+  }
+
+  // -- 5. Wildcard DNS services (resolve back to the IP) ------
+  if (fam.dns) {
+    const dash = oct.join('-');
+    add(`http://${ip}.nip.io${p}/`,   'dns');
+    add(`https://${ip}.nip.io${p}/`,  'dns');
+    add(`http://${dash}.nip.io${p}/`, 'dns');
+    add(`http://${ip}.sslip.io${p}/`, 'dns');
+    add(`https://${ip}.sslip.io${p}/`,'dns');
+    add(`http://www.${ip}.nip.io${p}/`, 'dns');
+    add(`http://${ip}.traefik.me${p}/`, 'dns');
+  }
+
+  // -- 6. IPv4-mapped IPv6 ------------------------------------
+  if (fam.ipv6) {
+    add(`http://[::ffff:${ip}]${p}/`, 'ipv6');
+    const hx = ((a<<8)|b).toString(16).padStart(4,'0') + ':' + ((c<<8)|d).toString(16).padStart(4,'0');
+    add(`http://[::ffff:${hx}]${p}/`, 'ipv6');
+    add(`http://[0:0:0:0:0:ffff:${hx}]${p}/`, 'ipv6'); // expanded form
+  }
+  return [...out.entries()].map(([url, family]) => ({url, family}));
+}
+
+/* ---------- Queue rendering (batched via DocumentFragment) -- */
+function renderQueue(){
+  const list = $('#chipList');
+  const frag = document.createDocumentFragment();
+  state.queue.forEach((item, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `<b>[${esc(item.family)}]</b> ${esc(item.url)}`;
+    const x = document.createElement('button');
+    x.textContent = '✕'; x.title = 'Remove';
+    x.addEventListener('click', () => {
+      if (state.scanning) return toast('Cannot edit queue during a scan', 'bad');
+      state.queue.splice(i,1); renderQueue();
+    });
+    chip.appendChild(x);
+    frag.appendChild(chip);
+  });
+  list.replaceChildren(frag);
+  $('#urlCount').textContent = state.queue.length;
+}
+
+function doGenerate(quiet=false){
+  validateIPRealtime();
+  if (!state.ip) { toast('Enter a valid IPv4 address first', 'bad'); ipInput.focus(); return false; }
+  const {oct} = parseTarget(state.ip);
+  const items = generateURLs(state.ip, oct, state.port, settings.families);
+  // keep manually-added customs, replace generated
+  state.queue = [...state.queue.filter(q => q.family === 'custom'), ...items];
+  renderQueue();
+  if (!quiet) toast(`Generated ${items.length} URL variations`, 'ok');
+  return true;
+}
+$('#genBtn').addEventListener('click', () => doGenerate());
+
+/* ---------- Custom URL add ---------------------------------- */
+function addCustomUrl(){
+  const inp = $('#customUrl');
+  let v = inp.value.trim();
+  if (!v) return;
+  if (state.queue.length >= 1000) { toast('Queue limit (1000 URLs) reached — clear some first', 'bad'); return; }
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) v = 'http://' + v;   // default scheme
+  try { new URL(v); } catch { toast('That is not a valid URL', 'bad'); return; }
+  if (state.queue.some(q => q.url === v)) { toast('URL already in queue', 'info'); return; }
+  state.queue.unshift({url:v, family:'custom'});
+  inp.value = ''; renderQueue();
+  toast('Custom URL added', 'ok');
+}
+$('#addUrlBtn').addEventListener('click', addCustomUrl);
+$('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomUrl(); });
+$('#clearQueueBtn').addEventListener('click', () => {
+  if (state.scanning) return toast('Cannot clear during a scan', 'bad');
+  state.queue = []; renderQueue();
+});
+
+/* ============================================================
+   SECTION F — FILTER SIGNATURE DATABASE (content scan)
+   ============================================================ */
+const SIGNATURES = [
+  [/lightspeed\s*systems/i,                       'Lightspeed Systems brand'],
+  [/lightspeed/i,                                 '"Lightspeed" text'],
+  [/relay\.school/i,                              'relay.school domain'],
+  [/ls-?filter|lsfilter\.net/i,                   'lsfilter marker'],
+  [/ls-block|lsblock/i,                           'ls-block marker'],
+  [/class=["'][^"']*ls[-_]/i,                     'Lightspeed CSS classes'],
+  [/this (site|page|content) (is|has been) (blocked|restricted|filtered)/i, 'block notice text'],
+  [/(web|content)[ -]?filter/i,                   'web-filter notice'],
+  [/blocked by (your )?(school|organization|administrator|network)/i, 'policy block notice'],
+  [/access (to this (site|page) )?(is )?(denied|restricted|blocked)/i, 'access-denied notice'],
+];
+function scanSignatures(html){
+  const head = html.slice(0, 250000);              // cap scan size for perf
+  for (const [re, label] of SIGNATURES) if (re.test(head)) return label;
+  // also check <title> specifically (cheap, high signal)
+  const t = head.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (t && /lightspeed|blocked|restricted|filtered|denied/i.test(t[1]))
+    return `page title: "${t[1].trim().slice(0,60)}"`;
+  return null;
+}
+
+/* ============================================================
+   SECTION G — PROBE METHODS (all client-side, all timeout-safe)
+   ============================================================ */
+// G.0 DNS-over-HTTPS pre-resolution — verifies wildcard-DNS names really map to
+// the target IP and detects NXDOMAIN before burning probe timeouts (CORS-open resolvers)
+const resolverName = () => settings.doh === 'cf' ? 'Cloudflare' : 'Google';
+async function dohResolve(name, timeoutMs){
+  const u = settings.doh === 'cf'
+    ? `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=A`
+    : `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=A`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(u, {headers:{accept:'application/dns-json'}, credentials:'omit', signal:ctrl.signal});
+    return await res.json();                    // {Status: 0|3|…, Answer: [{type:1, data:'1.2.3.4'}]}
+  } catch { return null; } finally { clearTimeout(t); }
+}
+
+// G.1 fetch() attempting to READ the body (definitive when CORS allows)
+async function probeFetchRead(url, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  const t0 = performance.now();
+  try {
+    const res = await fetch(cacheBust(url), {mode:'cors', credentials:'omit', signal:ctrl.signal, redirect:'follow'});
+    const text = await res.text();
+    return {ok:true, readable:true, status:res.status, text, ms:performance.now()-t0, method:'fetch (content read)'};
+  } catch (e) {
+    return {ok:false, ms:performance.now()-t0, aborted:e.name==='AbortError'};
+  } finally { clearTimeout(t); }
+}
+
+// G.2 opaque no-cors fetch — pure reachability (content unreadable)
+async function probeFetchOpaque(url, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  const t0 = performance.now();
+  try {
+    await fetch(cacheBust(url), {mode:'no-cors', credentials:'omit', signal:ctrl.signal, cache:'no-store'});
+    return {ok:true, ms:performance.now()-t0, method:'fetch (opaque)'};
+  } catch (e) {
+    return {ok:false, ms:performance.now()-t0, aborted:e.name==='AbortError'};
+  } finally { clearTimeout(t); }
+}
+
+// G.3 <img> loader (used against /favicon.ico — block pages are HTML, not images)
+function probeImage(url, ms){
+  return new Promise(res => {
+    const img = new Image();
+    const t0 = performance.now();
+    const done = r => { clearTimeout(t); img.onload = img.onerror = null; res({result:r, ms:performance.now()-t0, method:'img (favicon)'}); };
+    const t = setTimeout(() => done('timeout'), ms);
+    img.onload  = () => done('load');
+    img.onerror = () => done('error');
+    img.referrerPolicy = 'no-referrer';
+    img.src = cacheBust(url);
+  });
+}
+
+// G.4 <script> injection loader
+function probeScript(url, ms){
+  return new Promise(res => {
+    const s = document.createElement('script');
+    const t0 = performance.now();
+    const done = r => { clearTimeout(t); s.onload = s.onerror = null; s.remove(); res({result:r, ms:performance.now()-t0, method:'script tag'}); };
+    const t = setTimeout(() => done('timeout'), ms);
+    s.onload  = () => done('load');
+    s.onerror = () => done('error');
+    s.src = cacheBust(url);
+    document.head.appendChild(s);
+  });
+}
+
+// G.5 hidden <iframe> — Chrome fires onerror when X-Frame-Options/CSP blocks render
+function probeIframe(url, ms){
+  return new Promise(res => {
+    const f = document.createElement('iframe');
+    const t0 = performance.now();
+    f.style.cssText = 'position:fixed;width:1px;height:1px;left:-9999px;top:-9999px;visibility:hidden';
+    f.setAttribute('aria-hidden','true'); f.tabIndex = -1;
+    const done = r => { clearTimeout(t); f.onload = f.onerror = null; f.remove(); res({result:r, ms:performance.now()-t0, method:'iframe'}); };
+    const t = setTimeout(() => done('timeout'), ms);
+    f.onload  = () => done('load');
+    f.onerror = () => done('error');
+    f.src = url;
+    document.body.appendChild(f);
+  });
+}
+
+/* ============================================================
+   SECTION H — TEST ORCHESTRATION (one URL → verdict)
+   status: 'accessible' | 'blocked' | 'error'
+   Every result carries: method, ms, detail, verified(bool)
+   ============================================================ */
+async function testUrl(item, opts){
+  const {url} = item;
+  const t0 = performance.now();
+  const ev = [];                                   // per-probe evidence log (shown in row detail view)
+  const log = (probe, result, ms=0, note='') => ev.push({probe, result, ms: Math.round(ms), note});
+  const mixed = location.protocol === 'https:' && url.startsWith('http:');
+  const mixedNote = mixed ? ' · ⚠ http target from https page (may be mixed-content blocked by the browser)' : '';
+  const done = (status, method, ms, verified, detail) => ({status, method, ms, verified, ev, detail});
+
+  // -- Step 0: DoH pre-resolution for letter hostnames (nip.io, sslip.io, custom URLs).
+  //    Fails fast on NXDOMAIN and verifies wildcard-DNS names actually map to the target.
+  const host = hostOf(url);
+  if (host && /[a-z]/i.test(host) && !looksNumericHost(host) && settings.doh !== 'off') {
+    const dns = await dohResolve(host, Math.min(opts.timeout, 4000));
+    if (dns === null) {
+      log('DoH lookup', 'skipped', 0, 'resolver unreachable or blocked — continuing blind');
+    } else {
+      const addrs = (dns.Answer || []).filter(a => a.type === 1).map(a => a.data);
+      if (dns.Status === 3 || (dns.Status === 0 && !addrs.length)) {
+        log('DoH lookup', dns.Status === 3 ? 'NXDOMAIN' : 'no A record', 0, `${host} via ${resolverName()}`);
+        return done('error', 'DoH pre-check', performance.now()-t0, true,
+          `DNS says "${host}" does not resolve (${dns.Status === 3 ? 'NXDOMAIN' : 'no A record'}, via ${resolverName()}) — URL cannot load`);
+      }
+      const hit = state.ip && addrs.includes(state.ip);
+      log('DoH lookup', addrs.join(', ') || `status ${dns.Status}`, 0,
+          hit ? '✓ resolves to the target IP (wildcard DNS verified)' : 'A records via ' + resolverName());
+    }
+  }
+
+  // -- Step 1: readable fetch → real signature scan ------------
+  if (opts.methods.fetch) {
+    const rd = await probeFetchRead(url, opts.timeout);
+    if (rd.ok) {
+      const sig = scanSignatures(rd.text || '');
+      log('fetch (read)', `HTTP ${rd.status}`, rd.ms, sig ? `signature found: ${sig}` : 'content readable, no signatures');
+      return done(sig ? 'blocked' : 'accessible', rd.method, rd.ms, true,
+        sig ? `Filter signature detected — ${sig} (HTTP ${rd.status})`
+            : `HTTP ${rd.status}, ${((rd.text||'').length/1024).toFixed(1)} KB inspected — no filter signatures`);
+    }
+    log('fetch (read)', 'refused', rd.ms, rd.aborted ? 'timed out' : 'CORS/network refused — trying opaque');
+
+    // unreadable → continue to opaque reachability
+    const oc = await probeFetchOpaque(url, opts.timeout);
+    if (oc.ok) {
+      log('fetch (opaque)', 'responded', oc.ms, 'reachability confirmed, content unreadable');
+      // fetch succeeded; try iframe for a possible XFO/block-page signal
+      if (opts.methods.iframe) {
+        const fr = await probeIframe(url, opts.timeout);
+        log('iframe', fr.result, fr.ms);
+        if (fr.result === 'error')
+          return done('blocked', 'fetch + iframe', fr.ms, false,
+            'Reachable, but framing refused (X-Frame-Options / frame error) — possible filter block page (suspected)' + mixedNote);
+        if (fr.result === 'load')
+          return done('accessible', 'fetch + iframe', oc.ms, false,
+            'Responded and rendered in frame — content not readable cross-origin (inferred)' + mixedNote);
+      }
+      // optional favicon image sanity check: real sites serve images, block pages return HTML
+      if (opts.methods.img) {
+        const org = originOf(url);
+        if (org) {
+          const im = await probeImage(org + '/favicon.ico', opts.timeout);
+          log('img (favicon)', im.result, im.ms, im.result === 'load' ? 'valid image served' : '');
+          if (im.result === 'load')
+            return done('accessible', 'fetch + img', oc.ms, false,
+              'Responded and served a valid favicon image — likely reachable (inferred)' + mixedNote);
+        }
+      }
+      return done('accessible', oc.method, oc.ms, false,
+        'Server responded (opaque — content not inspectable via same-origin policy)' + mixedNote);
+    }
+    log('fetch (opaque)', 'failed', oc.ms, oc.aborted ? 'timed out' : 'network error');
+  }
+
+  // -- Step 2: fallback loaders (fetch disabled or failed) -----
+  if (opts.methods.iframe) {
+    const fr = await probeIframe(url, opts.timeout);
+    log('iframe', fr.result, fr.ms);
+    if (fr.result === 'load')
+      return done('accessible', fr.method, fr.ms, false,
+              'Loaded in hidden iframe — content not readable cross-origin (inferred)' + mixedNote);
+    if (fr.result === 'error' && !opts.methods.fetch)
+      return done('blocked', fr.method, fr.ms, false,
+              'Frame load rejected (possible X-Frame-Options filter page) — suspected' + mixedNote);
+  }
+  if (opts.methods.img) {
+    const im = await probeImage(url, opts.timeout);
+    log('img (direct)', im.result, im.ms);
+    if (im.result === 'load')
+      return done('accessible', im.method, im.ms, false,
+              'Loaded as image resource (likely a real asset, not a block page)' + mixedNote);
+  }
+  if (opts.methods.script) {
+    const sc = await probeScript(url, opts.timeout);
+    log('script tag', sc.result, sc.ms);
+    if (sc.result === 'load')
+      return done('accessible', sc.method, sc.ms, false,
+              'Loaded via <script> tag (content not inspectable)' + mixedNote);
+  }
+
+  // -- Step 3: everything failed --------------------------------
+  return done('error', 'all probes', performance.now()-t0, false,
+          'All probes failed or timed out (unreachable host, DNS failure, CORS/mixed-content refusal, or no listener)' + mixedNote);
+}
+
+/* ============================================================
+   SECTION I — CONCURRENT SCAN RUNNER (worker pool + ETA)
+   ============================================================ */
+const progEl = $('#progBar'), progTxt = $('#progressText'), cancelBtn = $('#cancelBtn');
+
+// Counters are derived from results (not incremented) — keeps stats correct for
+// retests, history loads, and partial scans without double-counting.
+function recomputeCounters(){
+  const c = {accessible:0, blocked:0, error:0, tested:0};
+  for (const r of state.results) {
+    if (r.status === 'testing') continue;
+    c.tested++;
+    c[r.status === 'accessible' ? 'accessible' : r.status === 'blocked' ? 'blocked' : 'error']++;
+  }
+  state.counters = c;
+}
+
+// Mini bar chart of response-time buckets (pure CSS bars)
+function renderHistogram(){
+  const box = $('#histogram');
+  if (!box) return;
+  const times = state.results.filter(r => r.status !== 'testing' && r.ms > 0).map(r => r.ms);
+  if (!times.length) { box.replaceChildren(); return; }
+  const buckets = [[0,250],[250,500],[500,1000],[1000,2000],[2000,4000],[4000,8000],[8000,Infinity]];
+  const counts = new Array(buckets.length).fill(0);
+  for (const m of times) { const bi = buckets.findIndex(b => m < b[1]); counts[bi === -1 ? buckets.length-1 : bi]++; }
+  const max = Math.max(...counts, 1);
+  const frag = document.createDocumentFragment();
+  buckets.forEach((b, i) => {
+    const d = document.createElement('div');
+    d.style.height = Math.max(6, counts[i]/max*100) + '%';
+    d.title = `${b[0]}–${b[1] === Infinity ? '∞' : b[1]} ms: ${counts[i]} result(s)`;
+    if (!counts[i]) d.classList.add('empty');
+    frag.appendChild(d);
+  });
+  box.replaceChildren(frag);
+}
+
+function setProgress(done, total, times){
+  const pct = total ? (done/total)*100 : 0;
+  progEl.style.width = pct.toFixed(1) + '%';
+  let eta = '—';
+  if (done > 0 && done < total && times.length) {
+    const avg = times.reduce((x,y)=>x+y,0)/times.length;
+    const rem = (total-done) * avg / settings.concurrency;
+    eta = rem > 60000 ? `~${(rem/60000).toFixed(1)} min` : `~${Math.ceil(rem/1000)}s`;
+  }
+  $('#stEta').textContent = done === total && total ? 'done' : eta;
+  progTxt.textContent = state.scanning
+    ? `Testing ${done}/${total} — ${settings.concurrency} parallel workers…`
+    : `Finished — ${done}/${total} tested.`;
+}
+
+function updateStats(){
+  const c = state.counters;
+  $('#stTotal').textContent = c.tested;
+  $('#stOk').textContent  = c.accessible;
+  $('#stBad').textContent = c.blocked;
+  $('#stErr').textContent = c.error;
+  const denom = c.accessible + c.blocked;
+  $('#stRate').textContent = c.tested ? ((c.accessible / c.tested) * 100).toFixed(1) + '%' : '—';
+}
+
+function setScanningUI(on){
+  document.body.classList.toggle('scanning', on);
+  $('#scanBtn').disabled = $('#genBtn').disabled = on;
+  cancelBtn.disabled = !on;
+  $('#scanBtn').textContent = on ? '⏳ Scanning…' : '▶ Scan';
+}
+
+// indices = null → fresh full scan from the queue; number[] → in-place re-scan of just those rows
+async function runScan(indices = null){
+  if (state.scanning) return;
+  if (!Object.values(settings.methods).some(Boolean)) { toast('Enable at least one probe method', 'bad'); return; }
+
+  if (indices === null) {
+    if (!state.queue.length && !doGenerate(true)) return;   // auto-generate from IP if needed
+    if (!state.queue.length) { toast('Queue is empty', 'bad'); return; }
+    // --- reset state & pre-render rows as "testing" (batched) ---
+    state.results = state.queue.map((q,i) => ({i, url:q.url, family:q.family, method:'—', status:'testing', ms:0, detail:'Waiting…', verified:false, ev:[]}));
+    state.rowRefs.clear();
+    buildTable(state.results);
+    indices = state.results.map(r => r.i);
+  } else {
+    for (const i of indices) {                              // mark subset rows for re-testing
+      Object.assign(state.results[i], {method:'—', status:'testing', ms:0, detail:'Re-testing…', verified:false, ev:[]});
+      updateRow(state.results[i]);
+    }
+  }
+
+  recomputeCounters(); updateStats(); setProgress(0, indices.length, []);
+  state.scanning = true; setScanningUI(true);
+
+  const opts = {timeout: settings.timeoutSec * 1000, methods: {...settings.methods}};
+  const times = [];
+  let done = 0, ptr = 0;
+
+  const worker = async () => {
+    while (state.scanning) {
+      const k = ptr++;
+      if (k >= indices.length) break;
+      const i = indices[k];
+      const r = await testUrl(state.results[i], opts).catch(() => ({
+        status:'error', method:'engine', ms:0, verified:false, detail:'Unexpected probe failure — handled gracefully', ev:[]
+      }));
+      Object.assign(state.results[i], r);
+      times.push(r.ms); done++;
+      updateRow(state.results[i]);
+      requestAnimationFrame(() => {
+        recomputeCounters(); updateStats();
+        setProgress(done, indices.length, times);
+        renderHistogram();
+      });
+    }
+  };
+
+  const started = Date.now();
+  await Promise.all(Array.from({length: Math.min(settings.concurrency, indices.length)}, worker));
+
+  // cancelled leftovers → mark as cancelled errors
+  for (const i of indices) {
+    const it = state.results[i];
+    if (it.status === 'testing') {
+      Object.assign(it, {status:'error', method:'—', detail:'Cancelled by user', verified:false});
+      updateRow(it);
+    }
+  }
+  state.scanning = false; setScanningUI(false);
+  recomputeCounters(); updateStats(); setProgress(done, indices.length, times);
+  renderFilterCounts(); renderHistogram();
+
+  const secs = ((Date.now()-started)/1000).toFixed(1);
+  toast(`Scan complete in ${secs}s — ${state.counters.accessible} accessible, ${state.counters.blocked} blocked`,
+        state.counters.blocked ? 'info' : 'ok', 5200);
+  saveHistory();
+}
+
+$('#scanBtn').addEventListener('click', runScan);
+ipInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !state.scanning) runScan(); });
+cancelBtn.addEventListener('click', () => { state.scanning = false; toast('Cancelling — finishing in-flight probes…', 'info'); });
+
+/* ============================================================
+   SECTION J — RESULTS TABLE (render / update / filter / sort)
+   ============================================================ */
+const tbody = $('#tbody');
+const STATUS_META = {
+  accessible: {pill:'ok',   label:'✅ ACCESSIBLE', row:'r-ok'},
+  blocked:    {pill:'bad',  label:'🚫 BLOCKED',    row:'r-bad'},
+  error:      {pill:'err',  label:'⚠️ TIMEOUT/ERROR', row:'r-err'},
+  testing:    {pill:'test', label:'🔄 TESTING',    row:''},
+};
+
+function rowHTML(r){
+  const m = STATUS_META[r.status];
+  return `<td>${r.i + 1}</td>
+    <td class="u mono">${esc(r.url)}<span class="fam">${esc(r.family)}${r.verified ? ' · verified' : r.status==='accessible'||r.status==='blocked' ? ' · inferred' : ''}</span></td>
+    <td class="mono">${esc(r.method)}</td>
+    <td><span class="pill ${m.pill}" title="${esc(r.detail)}">${m.label}</span></td>
+    <td class="mono">${r.status==='testing' ? '…' : fmtMs(r.ms)}</td>
+    <td class="dtl">${esc(r.detail)}</td>`;
+}
+function applyRowClass(tr, status){ tr.className = STATUS_META[status].row; }
+
+// Full (re)build — uses DocumentFragment for a single reflow
+function buildTable(results){
+  const frag = document.createDocumentFragment();
+  for (const r of results) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = rowHTML(r);
+    applyRowClass(tr, r.status);
+    tr.dataset.status = r.status;
+    state.rowRefs.set(r.i, tr);
+    frag.appendChild(tr);
+  }
+  tbody.replaceChildren(frag);
+  applyFilterAndSort();
+}
+// --- visibility predicates (status filter + text search) --------------------
+const matchesSearch = r => !state.search ||
+  (r.url + ' ' + r.family + ' ' + r.detail + ' ' + r.method).toLowerCase().includes(state.search);
+function rowVisible(tr, status){
+  if (state.filter !== 'all' && status !== state.filter) return false;
+  if (!state.search) return true;
+  const i = parseInt(tr.cells[0]?.textContent, 10) - 1;
+  const r = state.results[i];
+  return r ? matchesSearch(r) : true;
+}
+
+// O(1) in-place update when one URL finishes
+function updateRow(r){
+  const tr = state.rowRefs.get(r.i);
+  if (!tr) return;
+  tr.innerHTML = rowHTML(r);
+  applyRowClass(tr, r.status);
+  tr.dataset.status = r.status;
+  tbody.querySelector(`.detailrow[data-for="${r.i}"]`)?.remove();   // stale evidence view
+  tr.style.display = rowVisible(tr, r.status) ? '' : 'none';
+  renderFilterCounts();
+}
+
+function applyFilterAndSort(){
+  tbody.querySelectorAll('.detailrow').forEach(d => d.remove());   // collapse open evidence rows
+  const rows = [...tbody.children];
+  // filter — rows without a status (e.g. the "no results yet" placeholder) always stay visible
+  for (const tr of rows) {
+    const st = tr.dataset.status;
+    tr.style.display = (!st || rowVisible(tr, st)) ? '' : 'none';
+  }
+  // sort (re-insert in new order — cheap for <1k rows)
+  const order = {accessible:0, blocked:1, error:2, testing:3};
+  const byI = i => state.results[i] || {ms:Infinity};
+  if (state.sort !== 'order') {
+    rows.sort((t1, t2) => {
+      const r1 = byI(+t1.firstChild.textContent - 1), r2 = byI(+t2.firstChild.textContent - 1);
+      if (state.sort === 'status') return (order[t1.dataset.status] ?? 9) - (order[t2.dataset.status] ?? 9);
+      if (state.sort === 'fast')   return (r1.ms ?? Infinity) - (r2.ms ?? Infinity);
+      if (state.sort === 'slow')   return (r2.ms ?? -1) - (r1.ms ?? -1);
+      return 0;
+    });
+    const frag = document.createDocumentFragment();
+    rows.forEach(tr => frag.appendChild(tr));
+    tbody.appendChild(frag);
+  }
+}
+
+function renderFilterCounts(){
+  const n = {all: state.results.length, accessible:0, blocked:0, error:0, testing:0};
+  state.results.forEach(r => n[r.status] !== undefined && n[r.status]++);
+  $$('#filters .fbtn').forEach(b => {
+    const f = b.dataset.f;
+    b.textContent = b.textContent.replace(/\s*\(\d+\)$/,'') + ` (${n[f] ?? 0})`;
+  });
+}
+
+$$('#filters .fbtn').forEach(b => b.addEventListener('click', () => {
+  $$('#filters .fbtn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  state.filter = b.dataset.f;
+  applyFilterAndSort();
+}));
+$('#sortSel').addEventListener('change', e => { state.sort = e.target.value; applyFilterAndSort(); });
+
+// --- row click → expand/collapse the per-probe evidence log ------------------
+function evidenceHTML(r){
+  const tbl = (r.ev && r.ev.length)
+    ? `<table class="evtbl"><thead><tr><th>Probe</th><th>Result</th><th>ms</th><th>Note</th></tr></thead><tbody>${
+        r.ev.map(x => `<tr><td class="mono">${esc(x.probe)}</td><td>${esc(x.result)}</td>
+          <td class="mono">${x.ms ? fmtMs(x.ms) : '—'}</td><td>${esc(x.note || '')}</td></tr>`).join('')
+      }</tbody></table>`
+    : '<p class="note">No per-probe log captured for this row (from saved history — retest it for a fresh log).</p>';
+  return `<div class="mono" style="font-size:.74rem;color:var(--accent2);word-break:break-all">${esc(r.url)}</div>
+    ${tbl}<p class="note">Verdict: ${r.verified
+      ? '<b style="color:var(--ok)">verified</b> (content/DNS actually inspected)'
+      : '<b style="color:var(--warn)">inferred</b> (load/timing heuristics)'} — ${esc(r.detail)}</p>`;
+}
+tbody.addEventListener('click', e => {
+  const tr = e.target.closest('tr');
+  if (!tr || tr.classList.contains('detailrow') || !tr.dataset.status) return;
+  const i = parseInt(tr.cells[0]?.textContent, 10) - 1;
+  const r = state.results[i];
+  if (!r) return;
+  const wasOpen = tbody.querySelector(`.detailrow[data-for="${i}"]`);
+  tbody.querySelectorAll('.detailrow').forEach(d => d.remove());   // only one open at a time
+  if (wasOpen) return;                                             // click again → collapse
+  const dr = document.createElement('tr');
+  dr.className = 'detailrow'; dr.dataset.for = String(i);
+  dr.innerHTML = `<td colspan="6">${evidenceHTML(r)}</td>`;
+  tr.after(dr);
+});
+
+// --- text search + retest-errored buttons ------------------------------------
+$('#searchBox').addEventListener('input', e => {
+  state.search = e.target.value.trim().toLowerCase();
+  applyFilterAndSort();
+});
+$('#retestBtn').addEventListener('click', () => {
+  if (state.scanning) return toast('Finish the running scan first', 'bad');
+  const idxs = state.results.filter(r => r.status === 'error').map(r => r.i);
+  if (!idxs.length) return toast('No errored results to retest', 'ok');
+  toast(`Retesting ${idxs.length} errored URL(s)…`, 'info');
+  runScan(idxs);
+});
+
+/* ============================================================
+   SECTION K — EXPORTS (CSV / JSON) + COPY ACCESSIBLE
+   ============================================================ */
+function download(name, content, mime){
+  const blob = new Blob([content], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const csvCell = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+const stamp = () => new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+
+$('#csvBtn').addEventListener('click', () => {
+  if (!state.results.length) return toast('Nothing to export yet', 'bad');
+  const head = ['#','URL','Family','Method','Status','Response Time (ms)','Verified','Probe Log','Details'];
+  const lines = [head.map(csvCell).join(',')];
+  state.results.forEach(r => lines.push(
+    [r.i+1, r.url, r.family, r.method, r.status, r.status==='testing'?'':Math.round(r.ms),
+     r.verified?'yes':'no', (r.ev||[]).map(e => e.probe + '=' + e.result).join(' | '), r.detail]
+      .map(csvCell).join(',')));
+  download(`ip-scan-${stamp()}.csv`, lines.join('\r\n'), 'text/csv');
+  toast('CSV exported', 'ok');
+});
+
+$('#jsonBtn').addEventListener('click', () => {
+  if (!state.results.length) return toast('Nothing to export yet', 'bad');
+  const payload = {
+    tool: 'IP Link Scanner & Filter Tester',
+    target: {ip: state.ip, port: state.port},
+    scannedAt: new Date().toISOString(),
+    settings: {concurrency: settings.concurrency, timeoutSec: settings.timeoutSec, methods: settings.methods},
+    summary: {...state.counters},
+    results: state.results,
+  };
+  download(`ip-scan-${stamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  toast('JSON exported', 'ok');
+});
+
+$('#copyOkBtn').addEventListener('click', async () => {
+  const ok = state.results.filter(r => r.status === 'accessible').map(r => r.url);
+  if (!ok.length) return toast('No accessible URLs to copy', 'bad');
+  (await copyText(ok.join('\n'))) ? toast(`Copied ${ok.length} accessible URL(s)`, 'ok')
+                                  : toast('Clipboard unavailable in this browser', 'bad');
+});
+
+/* ============================================================
+   SECTION L — SCAN HISTORY (localStorage, last 10)
+   ============================================================ */
+function loadHistory(){ try { return JSON.parse(localStorage.getItem(LS_HIS) || '[]'); } catch { return []; } }
+function saveHistory(){
+  try {
+    const h = loadHistory();
+    h.unshift({
+      id: Date.now(), at: new Date().toISOString(), ip: state.ip, port: state.port,
+      counters: {...state.counters},
+      results: state.results.slice(0, 300).map(({i,url,family,method,status,ms,detail,verified}) =>
+        ({i,url,family,method,status,ms:Math.round(ms),detail,verified})),
+    });
+    localStorage.setItem(LS_HIS, JSON.stringify(h.slice(0,10)));
+  } catch { /* storage full/blocked — non-fatal */ }
+  renderHistory();
+}
+function renderHistory(){
+  const h = loadHistory();
+  const box = $('#historyList');
+  if (!h.length) { box.innerHTML = '<p class="note">No scans saved yet.</p>'; return; }
+  const frag = document.createDocumentFragment();
+  h.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'hitem';
+    div.innerHTML = `<span class="dot"></span>
+      <b class="mono">${esc(item.ip || '?')}${item.port ? ':' + item.port : ''}</b>
+      <time datetime="${esc(item.at)}">${new Date(item.at).toLocaleString()}</time>
+      <span>✅ ${item.counters.accessible} · 🚫 ${item.counters.blocked} · ⚠️ ${item.counters.error}</span>
+      <span class="spacer"></span>`;
+    const load = document.createElement('button');
+    load.className = 'btn ghost small'; load.textContent = 'Load';
+    load.addEventListener('click', () => {
+      if (state.scanning) return toast('Finish the running scan first', 'bad');
+      state.results = item.results; state.counters = {...item.counters};
+      state.ip = item.ip; state.port = item.port ?? null;
+      state.rowRefs.clear(); buildTable(state.results);
+      updateStats(); setProgress(item.results.length, item.results.length, []);
+      progTxt.textContent = `Loaded saved scan of ${item.ip} (${item.results.length} URLs).`;
+      $('#results').scrollIntoView({behavior:'smooth'});
+      toast('Saved scan loaded', 'ok');
+    });
+    const del = document.createElement('button');
+    del.className = 'btn ghost small'; del.textContent = '🗑';
+    del.addEventListener('click', () => {
+      const nh = loadHistory().filter(x => x.id !== item.id);
+      try { localStorage.setItem(LS_HIS, JSON.stringify(nh)); } catch {}
+      renderHistory(); toast('History entry deleted', 'ok');
+    });
+    div.append(load, del);
+    frag.appendChild(div);
+  });
+  box.replaceChildren(frag);
+}
+
+/* ============================================================
+   SECTION M — BYPASS TECHNIQUES REFERENCE PANEL (educational)
+   ============================================================ */
+function renderReference(ip='149.248.15.231', oct=[149,248,15,231]){
+  const [a,b,c,d] = oct;
+  const dword = a*0x1000000 + b*0x10000 + c*0x100 + d;
+  const items = [
+    ['Standard dotted decimal',        `http://${ip}/`,                    'baseline form'],
+    ['DWORD / integer notation',       `http://${dword}/`,                 '32-bit int of the IP'],
+    ['Hex DWORD',                      `http://0x${dword.toString(16).toUpperCase().padStart(8,'0')}/`, 'whole IP as one hex number'],
+    ['Octal DWORD',                    `http://0${dword.toString(8)}/`,    'whole IP in octal'],
+    ['Hex octets',                     `http://${oct.map(o=>'0x'+o.toString(16).padStart(2,'0')).join('.')}/`, 'per-octet hex'],
+    ['Octal octets',                   `http://${oct.map(o=>'0'+o.toString(8).padStart(3,'0')).join('.')}/`,  'per-octet octal'],
+    ['Mixed radix',                    `http://0x${a.toString(16)}.${b}.${c}.${d}/`, 'mix decimal & hex octets'],
+    ['URL-encoded dots',               `http://${ip.replace(/\./g,'%2E')}/`, 'percent-encoded separators'],
+    ['Trailing root dot',              `http://${ip}./`,                   'FQDN-style trailing dot'],
+    ['Wildcard DNS (nip.io)',          `http://${ip}.nip.io/`,             'resolves back to the IP'],
+    ['Wildcard DNS (sslip.io)',        `http://${ip}.sslip.io/`,           'resolves back to the IP'],
+    ['Dash-notation DNS',              `http://${oct.join('-')}.nip.io/`,  'dashes instead of dots'],
+    ['Subdomain prefix',               `http://www.${ip}.nip.io/`,         'extra label on wildcard DNS'],
+    ['IPv4-mapped IPv6',               `http://[::ffff:${ip}]/`,           'IPv6 literal wrapping the IPv4'],
+    ['Expanded IPv6',                  `http://[0:0:0:0:0:ffff:${((a<<8)|b).toString(16).padStart(4,'0')}:${((c<<8)|d).toString(16).padStart(4,'0')}]/`, 'same address, full literal'],
+    ['Trusted-domain @ trick',         `http://www.example.com@${ip}/`,    'host is whatever follows the @'],
+    ['Double-encoded dots',            `http://${ip.replace(/\./g,'%252E')}/`, 'legacy IE trick — rejected by modern URL parsers'],
+  ];
+  const box = $('#refList');
+  const frag = document.createDocumentFragment();
+  items.forEach(([name, url, why]) => {
+    const div = document.createElement('div');
+    div.className = 'refitem';
+    div.innerHTML = `<span style="min-width:150px;font-weight:700;font-size:.72rem">${esc(name)}</span>
+      <code>${esc(url)}</code><span class="why">${esc(why)}</span>`;
+    const cp = document.createElement('button');
+    cp.className = 'btn ghost small'; cp.textContent = '📋';
+    cp.title = 'Copy';
+    cp.addEventListener('click', async () =>
+      (await copyText(url)) ? toast('Copied to clipboard', 'ok') : toast('Clipboard unavailable', 'bad'));
+    div.appendChild(cp);
+    frag.appendChild(div);
+  });
+  box.replaceChildren(frag);
+}
+
+/* ============================================================
+   SECTION N — SETTINGS WIRING + INIT
+   ============================================================ */
+function wireSettings(){
+  const conc = $('#concRange'), to = $('#toRange');
+  conc.addEventListener('input', () => { settings.concurrency = +conc.value; $('#concVal').textContent = conc.value; saveSettings(); });
+  to.addEventListener('input',   () => { settings.timeoutSec = +to.value;   $('#toVal').textContent = to.value;   saveSettings(); });
+  $('#dohSel').addEventListener('change', e => { settings.doh = e.target.value; saveSettings();
+    toast(`DoH pre-check: ${settings.doh === 'off' ? 'off' : 'on (' + resolverName() + ')'}`, 'info', 2200); });
+  $$('#familyToggles input').forEach(cb => cb.addEventListener('change', () => {
+    settings.families[cb.dataset.fam] = cb.checked; saveSettings();
+  }));
+  $$('#methodToggles input').forEach(cb => cb.addEventListener('change', () => {
+    settings.methods[cb.dataset.m] = cb.checked; saveSettings();
+  }));
+}
+function applySettingsToUI(){
+  $('#concRange').value = settings.concurrency; $('#concVal').textContent = settings.concurrency;
+  $('#toRange').value  = settings.timeoutSec;  $('#toVal').textContent   = settings.timeoutSec;
+  $('#dohSel').value   = settings.doh;
+  $$('#familyToggles input').forEach(cb => cb.checked = !!settings.families[cb.dataset.fam]);
+  $$('#methodToggles input').forEach(cb => cb.checked = !!settings.methods[cb.dataset.m]);
+}
+
+(function init(){
+  loadSettings();
+  applyTheme(); applySettingsToUI(); wireSettings();
+  renderQueue(); renderHistory(); renderReference(); renderFilterCounts();
+  // refresh the reference panel live when a valid IP is typed
+  ipInput.addEventListener('input', () => {
+    const p = parseTarget(ipInput.value);
+    if (p) renderReference(p.ip, p.oct);
+  });
+  if (location.protocol === 'https:')
+    toast('Heads-up: HTTPS page → http:// probes may be mixed-content blocked by the browser. See About card.', 'info', 6500);
+})();
+</script>
+</body>
+</html>
