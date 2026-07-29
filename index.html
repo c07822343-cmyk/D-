@@ -213,6 +213,12 @@ tr.detailrow td{background:color-mix(in srgb,var(--accent) 6%,transparent);curso
 .histo>div{flex:1;min-height:3px;border-radius:4px 4px 0 0;opacity:.9;
   background:linear-gradient(180deg,var(--accent2),var(--accent));transition:height .3s ease}
 .histo>div.empty{background:var(--border);opacity:.35}
+/* mixed-content environment warning banner */
+.envbanner{margin-top:.8rem;font-size:.8rem;line-height:1.45;
+  background:color-mix(in srgb,var(--warn) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);
+  border-radius:12px;padding:.65rem .85rem}
+.envbanner code{background:var(--card-strong);border:1px solid var(--border);border-radius:6px;padding:.05rem .35rem;font-size:.72rem}
 /* ============================================================
    9. REFERENCE PANEL / MISC
    ============================================================ */
@@ -277,7 +283,7 @@ footer{max-width:1200px;margin:0 auto;padding:0 1.1rem 2.5rem;color:var(--muted)
       <div><h1>IP Link Scanner &amp; Filter Tester</h1><small>URL discovery · reachability audit</small></div>
     </div>
     <nav class="links">
-      <a href="#scanner">Scanner</a><a href="#queue">URL Queue</a><a href="#results">Results</a>
+      <a href="#scanner">Scanner</a><a href="#discover">Discover</a><a href="#queue">URL Queue</a><a href="#results">Results</a>
       <a href="#history">History</a><a href="#reference">Bypass Reference</a><a href="#about">About</a><a href="#deploy"><b>Deploy FREE 🚀</b></a>
     </nav>
     <button class="btn ghost small" id="themeBtn" title="Toggle dark/light mode">🌙 Dark</button>
@@ -314,6 +320,26 @@ footer{max-width:1200px;margin:0 auto;padding:0 1.1rem 2.5rem;color:var(--muted)
         <label class="tgl"><input type="checkbox" data-fam="ipv6" checked><span>IPv6-mapped</span></label>
       </div>
     </div>
+    <div class="row" style="margin-top:1rem;gap:.4rem;align-items:center">
+      <span class="note" style="margin:0">Sanity-check with a known-good IP:</span>
+      <button class="btn ghost small preset" data-ip="1.1.1.1">1.1.1.1 · Cloudflare</button>
+      <button class="btn ghost small preset" data-ip="8.8.8.8">8.8.8.8 · Google</button>
+      <button class="btn ghost small preset" data-ip="9.9.9.9">9.9.9.9 · Quad9</button>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CARD: REAL-DOMAIN DISCOVERY (reverse DNS + CT logs)
+       ============================================================ -->
+  <section class="card" id="discover">
+    <h2><span class="k">🔍</span> Real-Domain Discovery</h2>
+    <p class="sub">Find hostnames actually tied to the target IP: reverse DNS (PTR record) plus Certificate Transparency
+      logs (crt.sh). Anything found can be added to the queue in one click. Note: most ordinary IPs have no public records — that's normal.</p>
+    <div class="row" style="margin-top:.75rem">
+      <button class="btn ghost" id="discoverBtn">🔍 Run Discovery</button>
+      <a class="btn ghost small" id="ctLink" href="#" target="_blank" rel="noopener">↗ crt.sh manually</a>
+    </div>
+    <div id="discoverOut" style="margin-top:.8rem;display:grid;gap:.45rem"></div>
   </section>
 
   <!-- ============================================================
@@ -339,6 +365,7 @@ footer{max-width:1200px;margin:0 auto;padding:0 1.1rem 2.5rem;color:var(--muted)
         <label class="tgl"><input type="checkbox" data-m="img" checked><span>&lt;img&gt; (favicon)</span></label>
         <label class="tgl"><input type="checkbox" data-m="script"><span>&lt;script&gt;</span></label>
       </div>
+      <div class="hint">Enabled probes fire in parallel — per-URL worst case ≈ one timeout, not a sum.</div>
     </div>
     <div class="row" style="margin-top:1rem">
       <div style="flex:1;min-width:260px">
@@ -379,6 +406,13 @@ footer{max-width:1200px;margin:0 auto;padding:0 1.1rem 2.5rem;color:var(--muted)
       </div>
       <div class="spacer"></div>
       <button class="btn danger small" id="cancelBtn" disabled>■ Cancel</button>
+    </div>
+    <div class="envbanner" id="envBanner" style="display:none">
+      ⚠️ <b>Mixed content:</b> this page is served over <b>HTTPS</b>, so your browser refuses every
+      <code>http://</code> probe before any network activity — <b><span id="envCount">0</span> queued URL(s)</b> will be
+      auto-skipped as ⚠️. For full coverage, run this same file locally over plain HTTP:
+      <code>python -m http.server 8000</code> then open <code>http://localhost:8000</code>
+      <button class="btn ghost small" id="copyLocalCmd" style="margin-left:.4rem">📋 Copy command</button>
     </div>
     <div style="margin-top:.8rem" class="progress" role="progressbar" aria-label="Scan progress"><i id="progBar"></i></div>
     <div class="stats">
@@ -649,8 +683,10 @@ function validateIPRealtime(){
   if (p) {
     ipInput.classList.add('valid');
     ipHint.classList.add('ok');
-    ipHint.textContent = `✓ Valid IPv4${p.port ? ' · port ' + p.port : ''}`;
+    const priv = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(p.ip);
+    ipHint.textContent = `✓ Valid IPv4${p.port ? ' · port ' + p.port : ''}${priv ? ' · ⚠ private/reserved range — browsers may block these probes from a secure page; run this app over plain HTTP on the same LAN' : ''}`;
     state.ip = p.ip; state.port = p.port;
+    const ctl = $('#ctLink'); if (ctl) ctl.href = 'https://crt.sh/?q=' + encodeURIComponent(p.ip);
   } else {
     ipInput.classList.add('invalid');
     ipHint.classList.add('err');
@@ -752,6 +788,18 @@ function renderQueue(){
   });
   list.replaceChildren(frag);
   $('#urlCount').textContent = state.queue.length;
+  refreshEnvBanner();
+}
+
+// Warn (and later auto-skip) when an https:// page would make all http:// probes impossible
+function refreshEnvBanner(){
+  const b = $('#envBanner');
+  if (!b) return;
+  const nHttp = state.queue.filter(q => q.url.startsWith('http:')).length;
+  const show = location.protocol === 'https:' && nHttp > 0;
+  b.style.display = show ? '' : 'none';
+  const c = $('#envCount');
+  if (c) c.textContent = nHttp;
 }
 
 function doGenerate(quiet=false){
@@ -768,17 +816,20 @@ function doGenerate(quiet=false){
 $('#genBtn').addEventListener('click', () => doGenerate());
 
 /* ---------- Custom URL add ---------------------------------- */
+function addToQueue(v){
+  if (state.queue.length >= 1000) { toast('Queue limit (1000 URLs) reached — clear some first', 'bad'); return false; }
+  if (state.queue.some(q => q.url === v)) { toast('Already in queue: ' + v, 'info'); return false; }
+  state.queue.unshift({url: v, family: 'custom'});
+  renderQueue();
+  return true;
+}
 function addCustomUrl(){
   const inp = $('#customUrl');
   let v = inp.value.trim();
   if (!v) return;
-  if (state.queue.length >= 1000) { toast('Queue limit (1000 URLs) reached — clear some first', 'bad'); return; }
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) v = 'http://' + v;   // default scheme
   try { new URL(v); } catch { toast('That is not a valid URL', 'bad'); return; }
-  if (state.queue.some(q => q.url === v)) { toast('URL already in queue', 'info'); return; }
-  state.queue.unshift({url:v, family:'custom'});
-  inp.value = ''; renderQueue();
-  toast('Custom URL added', 'ok');
+  if (addToQueue(v)) { inp.value = ''; toast('Custom URL added', 'ok'); }
 }
 $('#addUrlBtn').addEventListener('click', addCustomUrl);
 $('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomUrl(); });
@@ -818,10 +869,10 @@ function scanSignatures(html){
 // G.0 DNS-over-HTTPS pre-resolution — verifies wildcard-DNS names really map to
 // the target IP and detects NXDOMAIN before burning probe timeouts (CORS-open resolvers)
 const resolverName = () => settings.doh === 'cf' ? 'Cloudflare' : 'Google';
-async function dohResolve(name, timeoutMs){
+async function dohResolve(name, timeoutMs, type = 'A'){
   const u = settings.doh === 'cf'
-    ? `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=A`
-    : `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=A`;
+    ? `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`
+    : `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -919,7 +970,7 @@ async function testUrl(item, opts){
   //    Fails fast on NXDOMAIN and verifies wildcard-DNS names actually map to the target.
   const host = hostOf(url);
   if (host && /[a-z]/i.test(host) && !looksNumericHost(host) && settings.doh !== 'off') {
-    const dns = await dohResolve(host, Math.min(opts.timeout, 4000));
+    const dns = await dohResolve(host, Math.min(opts.timeout, 3000));
     if (dns === null) {
       log('DoH lookup', 'skipped', 0, 'resolver unreachable or blocked — continuing blind');
     } else {
@@ -935,79 +986,71 @@ async function testUrl(item, opts){
     }
   }
 
-  // -- Step 1: readable fetch → real signature scan ------------
+  // -- Steps 1+2: fire ALL enabled probes in PARALLEL, then apply a priority ladder.
+  //    Dead hosts cost ~one timeout per URL instead of ~4 sequential timeouts.
+  const org = originOf(url);
+  const certNote = url.startsWith('https:')
+    ? ' · HTTPS to a raw IP only works with a valid IP TLS certificate (rare) — TLS refusals surface as plain network errors'
+    : '';
+  const jobs = {};
   if (opts.methods.fetch) {
-    const rd = await probeFetchRead(url, opts.timeout);
-    if (rd.ok) {
-      const sig = scanSignatures(rd.text || '');
-      log('fetch (read)', `HTTP ${rd.status}`, rd.ms, sig ? `signature found: ${sig}` : 'content readable, no signatures');
-      return done(sig ? 'blocked' : 'accessible', rd.method, rd.ms, true,
-        sig ? `Filter signature detected — ${sig} (HTTP ${rd.status})`
-            : `HTTP ${rd.status}, ${((rd.text||'').length/1024).toFixed(1)} KB inspected — no filter signatures`);
-    }
-    log('fetch (read)', 'refused', rd.ms, rd.aborted ? 'timed out' : 'CORS/network refused — trying opaque');
+    jobs.read   = probeFetchRead(url, opts.timeout);
+    jobs.opaque = probeFetchOpaque(url, opts.timeout);
+  }
+  if (opts.methods.iframe) jobs.frame = probeIframe(url, opts.timeout);
+  if (opts.methods.img && org) jobs.fav = probeImage(org + '/favicon.ico', opts.timeout);
+  if (opts.methods.img && !opts.methods.fetch) jobs.img = probeImage(url, opts.timeout);   // direct fallback when no fetch
+  if (opts.methods.script) jobs.script = probeScript(url, opts.timeout);
 
-    // unreadable → continue to opaque reachability
-    const oc = await probeFetchOpaque(url, opts.timeout);
-    if (oc.ok) {
-      log('fetch (opaque)', 'responded', oc.ms, 'reachability confirmed, content unreadable');
-      // fetch succeeded; try iframe for a possible XFO/block-page signal
-      if (opts.methods.iframe) {
-        const fr = await probeIframe(url, opts.timeout);
-        log('iframe', fr.result, fr.ms);
-        if (fr.result === 'error')
-          return done('blocked', 'fetch + iframe', fr.ms, false,
-            'Reachable, but framing refused (X-Frame-Options / frame error) — possible filter block page (suspected)' + mixedNote);
-        if (fr.result === 'load')
-          return done('accessible', 'fetch + iframe', oc.ms, false,
-            'Responded and rendered in frame — content not readable cross-origin (inferred)' + mixedNote);
-      }
-      // optional favicon image sanity check: real sites serve images, block pages return HTML
-      if (opts.methods.img) {
-        const org = originOf(url);
-        if (org) {
-          const im = await probeImage(org + '/favicon.ico', opts.timeout);
-          log('img (favicon)', im.result, im.ms, im.result === 'load' ? 'valid image served' : '');
-          if (im.result === 'load')
-            return done('accessible', 'fetch + img', oc.ms, false,
-              'Responded and served a valid favicon image — likely reachable (inferred)' + mixedNote);
-        }
-      }
-      return done('accessible', oc.method, oc.ms, false,
-        'Server responded (opaque — content not inspectable via same-origin policy)' + mixedNote);
-    }
-    log('fetch (opaque)', 'failed', oc.ms, oc.aborted ? 'timed out' : 'network error');
-  }
+  const R = {};
+  await Promise.all(Object.entries(jobs).map(([k, p]) => p.then(v => { R[k] = v; })));
 
-  // -- Step 2: fallback loaders (fetch disabled or failed) -----
-  if (opts.methods.iframe) {
-    const fr = await probeIframe(url, opts.timeout);
-    log('iframe', fr.result, fr.ms);
-    if (fr.result === 'load')
-      return done('accessible', fr.method, fr.ms, false,
-              'Loaded in hidden iframe — content not readable cross-origin (inferred)' + mixedNote);
-    if (fr.result === 'error' && !opts.methods.fetch)
-      return done('blocked', fr.method, fr.ms, false,
-              'Frame load rejected (possible X-Frame-Options filter page) — suspected' + mixedNote);
-  }
-  if (opts.methods.img) {
-    const im = await probeImage(url, opts.timeout);
-    log('img (direct)', im.result, im.ms);
-    if (im.result === 'load')
-      return done('accessible', im.method, im.ms, false,
-              'Loaded as image resource (likely a real asset, not a block page)' + mixedNote);
-  }
-  if (opts.methods.script) {
-    const sc = await probeScript(url, opts.timeout);
-    log('script tag', sc.result, sc.ms);
-    if (sc.result === 'load')
-      return done('accessible', sc.method, sc.ms, false,
-              'Loaded via <script> tag (content not inspectable)' + mixedNote);
-  }
+  // bulk evidence logging (every probe that actually ran)
+  const sig = (R.read && R.read.ok) ? scanSignatures(R.read.text || '') : null;
+  if (R.read)   log('fetch (read)', R.read.ok ? `HTTP ${R.read.status}` : 'refused', R.read.ms,
+                    R.read.ok ? (sig ? `signature found: ${sig}` : 'content readable, no signatures')
+                              : (R.read.aborted ? 'timed out' : 'CORS / TLS / network refused'));
+  if (R.opaque) log('fetch (opaque)', R.opaque.ok ? 'responded' : 'failed', R.opaque.ms,
+                    R.opaque.ok ? 'reachability confirmed, content unreadable' : (R.opaque.aborted ? 'timed out' : ''));
+  if (R.frame)  log('iframe', R.frame.result, R.frame.ms);
+  if (R.fav)    log('img (favicon)', R.fav.result, R.fav.ms, R.fav.result === 'load' ? 'valid image served' : '');
+  if (R.img)    log('img (direct)', R.img.result, R.img.ms);
+  if (R.script) log('script tag', R.script.result, R.script.ms);
 
-  // -- Step 3: everything failed --------------------------------
+  // -- priority ladder over the settled probe outcomes ------------------------------
+  if (R.read && R.read.ok)
+    return done(sig ? 'blocked' : 'accessible', R.read.method, R.read.ms, true,
+      sig ? `Filter signature detected — ${sig} (HTTP ${R.read.status})`
+          : `HTTP ${R.read.status}, ${((R.read.text||'').length/1024).toFixed(1)} KB inspected — no filter signatures`);
+  if (R.opaque && R.opaque.ok) {
+    if (R.frame && R.frame.result === 'error')
+      return done('blocked', 'fetch + iframe', R.frame.ms, false,
+        'Reachable, but framing refused (X-Frame-Options / frame error) — possible filter block page (suspected)' + mixedNote);
+    if (R.frame && R.frame.result === 'load')
+      return done('accessible', 'fetch + iframe', R.opaque.ms, false,
+        'Responded and rendered in frame — content not readable cross-origin (inferred)' + mixedNote);
+    if (R.fav && R.fav.result === 'load')
+      return done('accessible', 'fetch + img', R.opaque.ms, false,
+        'Responded and served a valid favicon image — likely reachable (inferred)' + mixedNote);
+    return done('accessible', R.opaque.method, R.opaque.ms, false,
+      'Server responded (opaque — content not inspectable via same-origin policy)' + mixedNote);
+  }
+  if (R.frame && R.frame.result === 'load')
+    return done('accessible', R.frame.method, R.frame.ms, false,
+      'Loaded in hidden iframe — content not readable cross-origin (inferred)' + mixedNote);
+  if (!opts.methods.fetch && R.frame && R.frame.result === 'error')
+    return done('blocked', R.frame.method, R.frame.ms, false,
+      'Frame load rejected (possible X-Frame-Options filter page) — suspected' + certNote + mixedNote);
+  if (R.img && R.img.result === 'load')
+    return done('accessible', R.img.method, R.img.ms, false,
+      'Loaded as image resource (likely a real asset, not a block page)' + certNote + mixedNote);
+  if (R.script && R.script.result === 'load')
+    return done('accessible', R.script.method, R.script.ms, false,
+      'Loaded via <script> tag (content not inspectable)' + certNote + mixedNote);
+
+  // -- everything failed -------------------------------------------------------------
   return done('error', 'all probes', performance.now()-t0, false,
-          'All probes failed or timed out (unreachable host, DNS failure, CORS/mixed-content refusal, or no listener)' + mixedNote);
+    'All probes failed or timed out (unreachable host, DNS failure, TLS/cert refusal, or no listener)' + certNote + mixedNote);
 }
 
 /* ============================================================
@@ -1100,8 +1143,33 @@ async function runScan(indices = null){
     }
   }
 
-  recomputeCounters(); updateStats(); setProgress(0, indices.length, []);
+  // HTTPS page → browsers refuse http:// subresource probes (mixed content).
+  // Mark those rows as skipped INSTANTLY instead of burning timeouts on guaranteed failures.
+  if (location.protocol === 'https:') {
+    const keep = [], skip = [];
+    for (const i of indices) (state.results[i].url.startsWith('http:') ? skip : keep).push(i);
+    if (skip.length) {
+      const why = 'browser blocks http:// probes from an https:// page (mixed content). Fix: serve this app over plain HTTP — python -m http.server 8000 → http://localhost:8000';
+      for (const i of skip) {
+        Object.assign(state.results[i], {status:'error', method:'skipped', ms:0, verified:false,
+          ev:[{probe:'browser', result:'mixed content', ms:0, note:'http:// subresource on https:// page — blocked before any network activity'}],
+          detail:'⏭ Skipped — ' + why});
+        updateRow(state.results[i]);
+      }
+      indices = keep;
+      if (!indices.length) {
+        state.scanning = false; setScanningUI(false);
+        recomputeCounters(); updateStats(); renderFilterCounts(); setProgress(0, 0, []);
+        progTxt.textContent = 'Nothing testable — every queued URL is http:// while this page is https://.';
+        toast(`All ${skip.length} URL(s) skipped: ${why}`, 'bad', 8000);
+        return;
+      }
+      toast(`${skip.length} http:// URL(s) auto-skipped — see the ⚠️ banner for the fix`, 'info', 5500);
+    }
+  }
+
   state.scanning = true; setScanningUI(true);
+  recomputeCounters(); updateStats(); setProgress(0, indices.length, []); renderHistogram();
 
   const opts = {timeout: settings.timeoutSec * 1000, methods: {...settings.methods}};
   const times = [];
@@ -1396,6 +1464,85 @@ function renderHistory(){
 }
 
 /* ============================================================
+   SECTION L2 — REAL-DOMAIN DISCOVERY (reverse DNS + CT logs)
+   ============================================================ */
+async function runDiscovery(){
+  validateIPRealtime();
+  if (!state.ip) { toast('Enter a valid IPv4 address first', 'bad'); ipInput.focus(); return; }
+  const out = $('#discoverOut'), btn = $('#discoverBtn');
+  btn.disabled = true; btn.textContent = '⏳ Discovering…';
+  out.innerHTML = '<p class="note">Querying reverse DNS (PTR)… then Certificate Transparency (crt.sh can take 10–25s)…</p>';
+  const found = new Map();                                   // hostname → source
+  const add = (h, src) => {
+    h = String(h || '').trim().toLowerCase().replace(/\.$/, '').replace(/^\*\./, '');
+    if (h && h.includes('.') && !/^\d{1,3}(\.\d{1,3}){3}$/.test(h) && !h.endsWith('.in-addr.arpa'))
+      found.set(h, found.get(h) || src);
+  };
+  let ptrOK = null, ctOK = null;
+
+  // 1) Reverse DNS PTR record via the configured DoH resolver
+  if (settings.doh !== 'off') {
+    const arpa = state.ip.split('.').reverse().join('.') + '.in-addr.arpa';
+    const d = await dohResolve(arpa, 5000, 'PTR');
+    ptrOK = d !== null;
+    (d?.Answer || []).filter(a => a.type === 12).forEach(a => add(a.data, 'reverse DNS (PTR)'));
+  }
+
+  // 2) Certificate Transparency logs via crt.sh JSON API (CORS-permitting but slow/flaky)
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20000);
+    const res = await fetch(`https://crt.sh/?q=${encodeURIComponent(state.ip)}&output=json`,
+      {signal: ctrl.signal, credentials: 'omit', referrerPolicy: 'no-referrer'});
+    const js = await res.json();
+    ctOK = true;
+    (Array.isArray(js) ? js : []).forEach(c => String(c.name_value || '').split('\n').forEach(n => add(n, 'CT logs (crt.sh)')));
+    clearTimeout(t);
+  } catch { ctOK = false; }
+
+  // 3) Render findings with one-click queue buttons
+  if (!found.size) {
+    out.innerHTML = `<p class="note">No public hostnames found for <b class="mono">${esc(state.ip)}</b> —
+      PTR: ${settings.doh === 'off' ? 'DoH off' : ptrOK ? 'no record' : 'resolver unreachable'} ·
+      crt.sh: ${ctOK ? 'no matching certificates' : 'blocked/unreachable from browser (CORS/rate-limit)'}.
+      That's normal for most IPs. You can still
+      <a href="https://crt.sh/?q=${encodeURIComponent(state.ip)}" target="_blank" rel="noopener">open crt.sh manually ↗</a>.</p>`;
+  } else {
+    const frag = document.createDocumentFragment();
+    [...found.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([h, src]) => {
+      const div = document.createElement('div');
+      div.className = 'hitem';
+      div.innerHTML = `<span class="dot"></span><b class="mono">${esc(h)}</b>
+        <span style="color:var(--muted);font-size:.7rem">${esc(src)}</span><span class="spacer"></span>`;
+      for (const scheme of ['http', 'https']) {
+        const b = document.createElement('button');
+        b.className = 'btn ghost small'; b.textContent = '＋ ' + scheme;
+        b.addEventListener('click', () => { if (addToQueue(`${scheme}://${h}/`)) toast('Queued ' + scheme + '://' + h, 'ok'); });
+        div.appendChild(b);
+      }
+      frag.appendChild(div);
+    });
+    out.replaceChildren(frag);
+    toast(`Discovery found ${found.size} hostname(s) — add them to the queue with ＋`, 'ok', 4500);
+  }
+  btn.disabled = false; btn.textContent = '🔍 Run Discovery';
+}
+$('#discoverBtn').addEventListener('click', runDiscovery);
+$('#copyLocalCmd').addEventListener('click', async () => {
+  (await copyText('python -m http.server 8000'))
+    ? toast('Copied — run it in a terminal here, then open http://localhost:8000', 'ok', 5000)
+    : toast('Clipboard unavailable', 'bad');
+});
+$$('.preset').forEach(b => b.addEventListener('click', () => {
+  if (state.scanning) return toast('Finish the running scan first', 'bad');
+  ipInput.value = b.dataset.ip;
+  validateIPRealtime();
+  const p = parseTarget(b.dataset.ip);
+  if (p) renderReference(p.ip, p.oct);
+  if (doGenerate(true)) toast(`Preset ${b.dataset.ip} loaded, queue ready — press ▶ Scan. Its https:// rows should come back ✅`, 'ok', 5000);
+}));
+
+/* ============================================================
    SECTION M — BYPASS TECHNIQUES REFERENCE PANEL (educational)
    ============================================================ */
 function renderReference(ip='149.248.15.231', oct=[149,248,15,231]){
@@ -1465,7 +1612,7 @@ function applySettingsToUI(){
 (function init(){
   loadSettings();
   applyTheme(); applySettingsToUI(); wireSettings();
-  renderQueue(); renderHistory(); renderReference(); renderFilterCounts();
+  renderQueue(); renderHistory(); renderReference(); renderFilterCounts(); refreshEnvBanner();
   // refresh the reference panel live when a valid IP is typed
   ipInput.addEventListener('input', () => {
     const p = parseTarget(ipInput.value);
